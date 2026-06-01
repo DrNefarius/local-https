@@ -54,10 +54,12 @@ SCRIPT_SOURCE_URL="${LOCAL_HTTPS_SOURCE_URL:-$SCRIPT_SOURCE_URL_DEFAULT}"
 
 # Friendly domain name added to the certificate SANs (and used as the preferred
 # URL when Pi-hole is present). Configurable so it does not have to be "pi.hole".
-# Precedence at runtime: LOCAL_HTTPS_DOMAIN env > --domain CLI > persisted state > default.
+# Precedence at runtime:
+#   LOCAL_HTTPS_DOMAIN env > --domain CLI > persisted state > Pi-hole webserver.domain > default.
 DOMAIN_DEFAULT="pi.hole"
 DOMAIN=""
 DOMAIN_CLI=""
+DOMAIN_FROM_PIHOLE=0
 
 SSL_DIR="/etc/ssl/servercerts"
 CERT_GROUP="certs"
@@ -158,14 +160,46 @@ sanitize_domain() {
   printf '%s' "$d"
 }
 
+detect_pihole_domain() {
+  local d=""
+
+  if command -v pihole-FTL >/dev/null 2>&1; then
+    d="$(pihole-FTL --config webserver.domain 2>/dev/null | head -n1 || true)"
+  fi
+
+  if [ -z "$d" ] && [ -f "$PIHOLE_TOML" ]; then
+    d="$(awk '
+      /^[[:space:]]*\[webserver\][[:space:]]*$/ { inws=1; next }
+      /^[[:space:]]*\[/ { inws=0 }
+      inws==1 && /^[[:space:]]*domain[[:space:]]*=/ {
+        v=$0
+        sub(/^[^=]*=[[:space:]]*/, "", v)
+        sub(/[[:space:]]*#.*$/, "", v)
+        gsub(/^["'"'"']|["'"'"'][[:space:]]*$/, "", v)
+        print v
+        exit
+      }
+    ' "$PIHOLE_TOML" 2>/dev/null || true)"
+  fi
+
+  printf '%s' "$d"
+}
+
 resolve_domain() {
   local d=""
+  DOMAIN_FROM_PIHOLE=0
   if [ -n "${LOCAL_HTTPS_DOMAIN:-}" ]; then
     d="$LOCAL_HTTPS_DOMAIN"
   elif [ -n "${DOMAIN_CLI:-}" ]; then
     d="$DOMAIN_CLI"
   else
     d="$(read_state_value domain)"
+    if [ -z "$d" ] && [ "${PIHOLE_PRESENT:-0}" -eq 1 ]; then
+      d="$(sanitize_domain "$(detect_pihole_domain)")"
+      if [ -n "$d" ]; then
+        DOMAIN_FROM_PIHOLE=1
+      fi
+    fi
   fi
   d="$(sanitize_domain "$d")"
   [ -n "$d" ] || d="$DOMAIN_DEFAULT"
@@ -556,6 +590,7 @@ print_help() {
   echo "  - Reinstall only via: --uninstall then --install"
   echo "  - --domain sets the friendly name added to the certificate (default: $DOMAIN_DEFAULT)."
   echo "    It is remembered across renewals. You can also set LOCAL_HTTPS_DOMAIN."
+  echo "    If Pi-hole is detected and no domain is set, its webserver.domain is used."
   echo ""
 }
 
@@ -775,7 +810,11 @@ read_host_identity() {
   [ -n "$HOSTNAME" ] || HOSTNAME="localhost"
 
   resolve_domain
-  vout "\033[34m[i]\033[0m Domain: $DOMAIN"
+  if [ "$DOMAIN_FROM_PIHOLE" -eq 1 ]; then
+    out "\033[34m[i]\033[0m Detected Pi-hole web domain: $DOMAIN"
+  else
+    vout "\033[34m[i]\033[0m Domain: $DOMAIN"
+  fi
 
   collect_san_ips_from_hostname_i
 

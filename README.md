@@ -71,9 +71,9 @@ curl -fsSL https://raw.githubusercontent.com/DrNefarius/local-https/main/install
 
 ## 🌐 Custom domain
 
-By default the certificate includes the friendly name `pi.hole`. If your network uses a different local domain, you can configure it. The chosen domain is added to the certificate SANs and is remembered across renewals (stored in the state file).
+The certificate includes a friendly domain name (default `pi.hole`). If your network uses a different local domain, you can configure it. The chosen domain is added to the certificate SANs and is remembered across renewals (stored in the state file).
 
-There are three ways to set it (highest precedence first):
+The domain is resolved with the following precedence (highest first):
 
 1. **Environment variable** – `LOCAL_HTTPS_DOMAIN`:
    ```bash
@@ -84,7 +84,11 @@ There are three ways to set it (highest precedence first):
    sudo local-https --install --domain home.lan
    sudo local-https --configure --domain dns.home
    ```
-3. **Interactive prompt** – shown during `--install`/`--configure` when no env var or flag is provided (press Enter to keep the current value).
+3. **Persisted state** – whatever was chosen on the previous run (so renewals stay consistent).
+4. **Pi-hole auto-detection** – on a fresh install, if Pi-hole is detected the script reads its configured `webserver.domain` (via `pihole-FTL --config`, falling back to `/etc/pihole/pihole.toml`) and uses that as the default.
+5. **Default** – `pi.hole`.
+
+During an interactive `--install`/`--configure` you are also prompted, pre-filled with the resolved value (press Enter to keep it).
 
 To change the domain on an existing install, run `sudo local-https --configure --domain <name>` (or `sudo local-https --renew --force-renew --domain <name>`). The Root CA stays the same, so there is nothing new to trust on your devices.
 
