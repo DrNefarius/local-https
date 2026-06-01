@@ -19,7 +19,7 @@ It is officially supported on Debian-based distributions (Debian, Ubuntu, Raspbe
 ## 🚀 One-Step Automated Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/DrNefarius/local-https/main/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/luizbizzio/local-https/main/install.sh | sudo bash
 ```
 
 That installs the command to:
@@ -31,7 +31,7 @@ Then it runs the setup flow (`local-https --install`) and offers auto-renew (sys
 During the interactive install you are asked for a **domain name** to add to the certificate (default `pi.hole`). Pick whatever your network uses (e.g. `home.lan`, `dns.home`). To set it non-interactively, pass it as an environment variable:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/DrNefarius/local-https/main/install.sh | sudo LOCAL_HTTPS_DOMAIN=home.lan bash
+curl -fsSL https://raw.githubusercontent.com/luizbizzio/local-https/main/install.sh | sudo LOCAL_HTTPS_DOMAIN=home.lan bash
 ```
 
 -----

@@ -8,7 +8,7 @@ set -euo pipefail
 
 export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
-REPO_RAW_BASE_DEFAULT="https://raw.githubusercontent.com/DrNefarius/local-https/main"
+REPO_RAW_BASE_DEFAULT="https://raw.githubusercontent.com/luizbizzio/local-https/main"
 REPO_RAW_BASE="${LOCAL_HTTPS_RAW_BASE:-$REPO_RAW_BASE_DEFAULT}"
 
 SCRIPT_NAME="local-https"
@@ -16,7 +16,7 @@ INSTALL_PATH="/usr/local/sbin/local-https"
 SOURCE_URL_DEFAULT="${REPO_RAW_BASE}/local-https.sh"
 SOURCE_URL="${LOCAL_HTTPS_SOURCE_URL:-$SOURCE_URL_DEFAULT}"
 
-EXPECTED_SHA256_DEFAULT="4a617f95ab26b7dd971e8e806caf774a4162885c2c0eb8921e31bb54b60ba89c"
+EXPECTED_SHA256_DEFAULT="07fe2a6a55de638e07d1699886e48e55a19e2031b084cdfdaca4843733cf6960"
 EXPECTED_SHA256="${LOCAL_HTTPS_EXPECTED_SHA256:-$EXPECTED_SHA256_DEFAULT}"
 
 NONINTERACTIVE="${LOCAL_HTTPS_NONINTERACTIVE:-0}"

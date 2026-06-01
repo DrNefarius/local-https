@@ -49,7 +49,7 @@ die() { printf '%b\n' "\033[31m[ERROR]\033[0m $1" >&2; exit 1; }
 SCRIPT_CMD_NAME="local-https"
 INSTALL_PATH="/usr/local/sbin/local-https"
 
-SCRIPT_SOURCE_URL_DEFAULT="https://raw.githubusercontent.com/DrNefarius/local-https/main/local-https.sh"
+SCRIPT_SOURCE_URL_DEFAULT="https://raw.githubusercontent.com/luizbizzio/local-https/main/local-https.sh"
 SCRIPT_SOURCE_URL="${LOCAL_HTTPS_SOURCE_URL:-$SCRIPT_SOURCE_URL_DEFAULT}"
 
 # Friendly domain name added to the certificate SANs (and used as the preferred
@@ -394,7 +394,7 @@ collect_san_ips_from_hostname_i() {
 
 print_repo_hint() {
   [ "${LOCAL_HTTPS_SHOW_REPO_HINT:-1}" = "0" ] && return 0
-  local repo="https://github.com/DrNefarius/local-https"
+  local repo="https://github.com/luizbizzio/local-https"
   printf '%b\n' "\033[90mDocumentation, source code, and issue tracker:\033[0m $repo"
   printf '%b\n' "\033[90mIf this tool helped you, consider starring the repository.\033[0m"
   echo ""
