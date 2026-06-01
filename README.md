@@ -19,7 +19,7 @@ It is officially supported on Debian-based distributions (Debian, Ubuntu, Raspbe
 ## 🚀 One-Step Automated Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/luizbizzio/local-https/main/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/DrNefarius/local-https/main/install.sh | sudo bash
 ```
 
 That installs the command to:
@@ -27,6 +27,12 @@ That installs the command to:
 - `/usr/local/sbin/local-https`
 
 Then it runs the setup flow (`local-https --install`) and offers auto-renew (systemd timer recommended).
+
+During the interactive install you are asked for a **domain name** to add to the certificate (default `pi.hole`). Pick whatever your network uses (e.g. `home.lan`, `dns.home`). To set it non-interactively, pass it as an environment variable:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/DrNefarius/local-https/main/install.sh | sudo LOCAL_HTTPS_DOMAIN=home.lan bash
+```
 
 -----
 
@@ -36,7 +42,7 @@ Then it runs the setup flow (`local-https --install`) and offers auto-renew (sys
 - 🪪 Issues a **server certificate** (default: **40 days**) with SANs for:
   - hostname
   - relevant LAN IPs (filtered)
-  - `pi.hole` when Pi-hole is detected
+  - a configurable **domain name** (default `pi.hole`)
   - Tailscale DNS name when available
 - 📦 Generates:
   - `server.pem` (cert + key, for services like Pi-hole)
@@ -60,6 +66,27 @@ Then it runs the setup flow (`local-https --install`) and offers auto-renew (sys
 | `sudo local-https --print-pfx-pass` | Prints the PFX password (stored in a root-only file) |
 | `sudo local-https --rotate-pfx-pass` | Rotates PFX password, rebuilds PFX, updates Technitium TLS settings |
 | `sudo local-https --uninstall [--yes] [--purge-certs]` | Removes installed files and optionally deletes generated certs |
+
+-----
+
+## 🌐 Custom domain
+
+By default the certificate includes the friendly name `pi.hole`. If your network uses a different local domain, you can configure it. The chosen domain is added to the certificate SANs and is remembered across renewals (stored in the state file).
+
+There are three ways to set it (highest precedence first):
+
+1. **Environment variable** – `LOCAL_HTTPS_DOMAIN`:
+   ```bash
+   sudo LOCAL_HTTPS_DOMAIN=home.lan local-https --install
+   ```
+2. **CLI flag** – `--domain` (works with `--install`, `--configure`, and `--renew`):
+   ```bash
+   sudo local-https --install --domain home.lan
+   sudo local-https --configure --domain dns.home
+   ```
+3. **Interactive prompt** – shown during `--install`/`--configure` when no env var or flag is provided (press Enter to keep the current value).
+
+To change the domain on an existing install, run `sudo local-https --configure --domain <name>` (or `sudo local-https --renew --force-renew --domain <name>`). The Root CA stays the same, so there is nothing new to trust on your devices.
 
 -----
 

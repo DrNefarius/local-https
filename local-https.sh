@@ -49,8 +49,15 @@ die() { printf '%b\n' "\033[31m[ERROR]\033[0m $1" >&2; exit 1; }
 SCRIPT_CMD_NAME="local-https"
 INSTALL_PATH="/usr/local/sbin/local-https"
 
-SCRIPT_SOURCE_URL_DEFAULT="https://raw.githubusercontent.com/luizbizzio/local-https/main/local-https.sh"
+SCRIPT_SOURCE_URL_DEFAULT="https://raw.githubusercontent.com/DrNefarius/local-https/main/local-https.sh"
 SCRIPT_SOURCE_URL="${LOCAL_HTTPS_SOURCE_URL:-$SCRIPT_SOURCE_URL_DEFAULT}"
+
+# Friendly domain name added to the certificate SANs (and used as the preferred
+# URL when Pi-hole is present). Configurable so it does not have to be "pi.hole".
+# Precedence at runtime: LOCAL_HTTPS_DOMAIN env > --domain CLI > persisted state > default.
+DOMAIN_DEFAULT="pi.hole"
+DOMAIN=""
+DOMAIN_CLI=""
 
 SSL_DIR="/etc/ssl/servercerts"
 CERT_GROUP="certs"
@@ -138,6 +145,55 @@ read_state_value() {
   [ -n "$line" ] || return 0
   val="${line#*=}"
   state_unquote "$val" || true
+}
+
+sanitize_domain() {
+  local d="${1:-}"
+  d="$(printf '%s' "$d" | tr -d '[:space:]' | tr 'A-Z' 'a-z')"
+  d="${d#.}"
+  d="${d%.}"
+  case "$d" in
+    ""|*[!a-z0-9.-]*) printf '%s' ""; return 0 ;;
+  esac
+  printf '%s' "$d"
+}
+
+resolve_domain() {
+  local d=""
+  if [ -n "${LOCAL_HTTPS_DOMAIN:-}" ]; then
+    d="$LOCAL_HTTPS_DOMAIN"
+  elif [ -n "${DOMAIN_CLI:-}" ]; then
+    d="$DOMAIN_CLI"
+  else
+    d="$(read_state_value domain)"
+  fi
+  d="$(sanitize_domain "$d")"
+  [ -n "$d" ] || d="$DOMAIN_DEFAULT"
+  DOMAIN="$d"
+}
+
+maybe_prompt_domain() {
+  [ -n "${LOCAL_HTTPS_DOMAIN:-}" ] && return 0
+  [ -n "${DOMAIN_CLI:-}" ] && return 0
+  [ "$NONINTERACTIVE" -eq 1 ] && return 0
+  [ -t 0 ] || return 0
+
+  local current="${DOMAIN:-$DOMAIN_DEFAULT}"
+  local ans="" clean=""
+  while true; do
+    read -r -p "$(printf '%b' "\033[36m[?]\033[0m Certificate domain name (e.g. pi.hole, home.lan) [${current}]: ")" ans || ans=""
+    if [ -z "$ans" ]; then
+      DOMAIN="$current"
+      return 0
+    fi
+    clean="$(sanitize_domain "$ans")"
+    if [ -n "$clean" ]; then
+      DOMAIN="$clean"
+      out "\033[32m[✓]\033[0m Using domain: $DOMAIN"
+      return 0
+    fi
+    out "\033[33m[!]\033[0m Invalid domain. Use letters, digits, dots, and hyphens."
+  done
 }
 
 svc_active() {
@@ -304,7 +360,7 @@ collect_san_ips_from_hostname_i() {
 
 print_repo_hint() {
   [ "${LOCAL_HTTPS_SHOW_REPO_HINT:-1}" = "0" ] && return 0
-  local repo="https://github.com/luizbizzio/local-https"
+  local repo="https://github.com/DrNefarius/local-https"
   printf '%b\n' "\033[90mDocumentation, source code, and issue tracker:\033[0m $repo"
   printf '%b\n' "\033[90mIf this tool helped you, consider starring the repository.\033[0m"
   echo ""
@@ -356,6 +412,7 @@ write_state() {
     echo "installed_at=$(sh_quote "$installed_at")"
     echo "last_run_at=$(sh_quote "$ts")"
     echo "hostname=$(sh_quote "${HOSTNAME:-$(hostname 2>/dev/null || true)}")"
+    echo "domain=$(sh_quote "${DOMAIN:-$DOMAIN_DEFAULT}")"
     echo "applied_targets=$(sh_quote "$applied")"
     echo "autorenew_method=$(sh_quote "$method")"
     echo "pihole_detected=$(sh_quote "${PIHOLE_PRESENT:-0}")"
@@ -483,20 +540,22 @@ remove_block() {
 print_help() {
   echo ""
   echo "Usage:"
-  echo "  $SCRIPT_CMD_NAME --install"
-  echo "  $SCRIPT_CMD_NAME --renew [--force-renew]"
+  echo "  $SCRIPT_CMD_NAME --install [--domain <name>]"
+  echo "  $SCRIPT_CMD_NAME --renew [--force-renew] [--domain <name>]"
   echo "  $SCRIPT_CMD_NAME --check"
   echo "  $SCRIPT_CMD_NAME --status"
   echo "  $SCRIPT_CMD_NAME --print-ca"
   echo "  $SCRIPT_CMD_NAME --print-pfx-pass"
   echo "  $SCRIPT_CMD_NAME --rotate-pfx-pass"
-  echo "  $SCRIPT_CMD_NAME --configure"
+  echo "  $SCRIPT_CMD_NAME --configure [--domain <name>]"
   echo "  $SCRIPT_CMD_NAME --uninstall [--yes] [--purge-certs]"
   echo ""
   echo "Notes:"
   echo "  - Running without args shows this help."
   echo "  - If already installed, --install will not run again."
   echo "  - Reinstall only via: --uninstall then --install"
+  echo "  - --domain sets the friendly name added to the certificate (default: $DOMAIN_DEFAULT)."
+  echo "    It is remembered across renewals. You can also set LOCAL_HTTPS_DOMAIN."
   echo ""
 }
 
@@ -715,6 +774,9 @@ read_host_identity() {
   HOSTNAME="$(hostname 2>/dev/null || true)"
   [ -n "$HOSTNAME" ] || HOSTNAME="localhost"
 
+  resolve_domain
+  vout "\033[34m[i]\033[0m Domain: $DOMAIN"
+
   collect_san_ips_from_hostname_i
 
   local ip_count=0
@@ -807,6 +869,7 @@ issue_or_renew_server_cert() {
 
   [ -n "${HOSTNAME:-}" ] || HOSTNAME="$(hostname 2>/dev/null || true)"
   [ -n "${HOSTNAME:-}" ] || HOSTNAME="localhost"
+  [ -n "${DOMAIN:-}" ] || resolve_domain
 
   cat << EOF > server-openssl.cnf
 [ req ]
@@ -828,18 +891,19 @@ DNS.1 = $HOSTNAME
 EOF
 
   local DNS_INDEX=2
-  
-  if [ "$HOSTNAME" != "pi.hole" ]; then
-    echo "DNS.${DNS_INDEX} = pi.hole" >> server-openssl.cnf
+  local DOMAIN_SHORT="${DOMAIN%%.*}"
+
+  if [ -n "$DOMAIN" ] && [ "$HOSTNAME" != "$DOMAIN" ]; then
+    echo "DNS.${DNS_INDEX} = $DOMAIN" >> server-openssl.cnf
     DNS_INDEX=$((DNS_INDEX + 1))
   fi
-  
-  if [ -n "$TAILSCALE_DNS" ] && [ "$TAILSCALE_DNS" != "null" ] && [ "$TAILSCALE_DNS" != "pi.hole" ] && [ "$TAILSCALE_DNS" != "$HOSTNAME" ]; then
+
+  if [ -n "$TAILSCALE_DNS" ] && [ "$TAILSCALE_DNS" != "null" ] && [ "$TAILSCALE_DNS" != "$DOMAIN" ] && [ "$TAILSCALE_DNS" != "$HOSTNAME" ]; then
     echo "DNS.${DNS_INDEX} = $TAILSCALE_DNS" >> server-openssl.cnf
     DNS_INDEX=$((DNS_INDEX + 1))
   fi
-  
-  if [ -n "$TAILSCALE_SHORT" ] && [ "$TAILSCALE_SHORT" != "null" ] && [ "$TAILSCALE_SHORT" != "$HOSTNAME" ] && [ "$TAILSCALE_SHORT" != "pi" ] && [ "$TAILSCALE_SHORT" != "pihole" ]; then
+
+  if [ -n "$TAILSCALE_SHORT" ] && [ "$TAILSCALE_SHORT" != "null" ] && [ "$TAILSCALE_SHORT" != "$HOSTNAME" ] && [ "$TAILSCALE_SHORT" != "$DOMAIN_SHORT" ]; then
     echo "DNS.${DNS_INDEX} = $TAILSCALE_SHORT" >> server-openssl.cnf
     DNS_INDEX=$((DNS_INDEX + 1))
   fi
@@ -907,8 +971,8 @@ EOF
     for _ip in $FILTERED_IPS; do ip_count=$((ip_count + 1)); done
 
     local dns_list="$HOSTNAME"
-    if [ "$PIHOLE_PRESENT" -eq 1 ]; then
-      dns_list="$dns_list, pi.hole"
+    if [ -n "$DOMAIN" ] && [ "$DOMAIN" != "$HOSTNAME" ]; then
+      dns_list="$dns_list, $DOMAIN"
     fi
     if [ -n "$TAILSCALE_DNS" ] && [ "$TAILSCALE_DNS" != "null" ]; then
       dns_list="$dns_list, $TAILSCALE_DNS"
@@ -1158,7 +1222,7 @@ deploy_pihole_ftl_tls() {
 choose_preferred_dns() {
   local d=""
   if [ "${PIHOLE_PRESENT:-0}" -eq 1 ]; then
-    d="pi.hole"
+    d="${DOMAIN:-$DOMAIN_DEFAULT}"
   fi
   if [ -z "$d" ] && [ -n "${TAILSCALE_DNS:-}" ] && [ "${TAILSCALE_DNS:-}" != "null" ]; then
     d="$TAILSCALE_DNS"
@@ -1755,6 +1819,7 @@ status() {
     echo "- State file: present ($STATE_FILE)"
     echo "- Installed at: $(read_state_value installed_at)"
     echo "- Last run at: $(read_state_value last_run_at)"
+    echo "- Domain: $(read_state_value domain)"
     echo "- Applied targets: $(read_state_value applied_targets)"
     echo "- Auto renew method: $(read_state_value autorenew_method)"
     echo "- Cert renewed last run: $(read_state_value cert_renewed)"
@@ -1908,6 +1973,8 @@ renew_flow() {
   HOSTNAME="$(hostname 2>/dev/null || true)"
   [ -n "$HOSTNAME" ] || HOSTNAME="localhost"
 
+  resolve_domain
+
   collect_san_ips_from_hostname_i
 
   TAILSCALE_DNS=""
@@ -2015,6 +2082,7 @@ configure_flow() {
 
   detect_pihole_and_technitium
   read_host_identity
+  maybe_prompt_domain
   prepare_dir
 
   [ -f "$CA_CRT" ] && [ -f "$CA_KEY" ] || create_or_reuse_ca
@@ -2068,6 +2136,7 @@ install_flow() {
 
   detect_pihole_and_technitium
   read_host_identity
+  maybe_prompt_domain
   prepare_dir
   create_or_reuse_ca
   issue_or_renew_server_cert
@@ -2094,6 +2163,14 @@ parse_cli() {
       ;;
     --install)
       shift
+      while [ "$#" -gt 0 ]; do
+        case "$1" in
+          --domain) DOMAIN_CLI="${2:-}"; shift 2 || shift; continue ;;
+          --domain=*) DOMAIN_CLI="${1#*=}" ;;
+          *) ;;
+        esac
+        shift
+      done
       install_flow
       exit 0
       ;;
@@ -2102,6 +2179,8 @@ parse_cli() {
       while [ "$#" -gt 0 ]; do
         case "$1" in
           --force-renew) FORCE_RENEW=1 ;;
+          --domain) DOMAIN_CLI="${2:-}"; shift 2 || shift; continue ;;
+          --domain=*) DOMAIN_CLI="${1#*=}" ;;
           *) ;;
         esac
         shift
@@ -2131,6 +2210,14 @@ parse_cli() {
       ;;
     --configure)
       shift
+      while [ "$#" -gt 0 ]; do
+        case "$1" in
+          --domain) DOMAIN_CLI="${2:-}"; shift 2 || shift; continue ;;
+          --domain=*) DOMAIN_CLI="${1#*=}" ;;
+          *) ;;
+        esac
+        shift
+      done
       configure_flow
       exit 0
       ;;

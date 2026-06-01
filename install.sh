@@ -8,7 +8,7 @@ set -euo pipefail
 
 export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
-REPO_RAW_BASE_DEFAULT="https://raw.githubusercontent.com/luizbizzio/local-https/main"
+REPO_RAW_BASE_DEFAULT="https://raw.githubusercontent.com/DrNefarius/local-https/main"
 REPO_RAW_BASE="${LOCAL_HTTPS_RAW_BASE:-$REPO_RAW_BASE_DEFAULT}"
 
 SCRIPT_NAME="local-https"
@@ -118,6 +118,7 @@ run_installer_interactive() {
       LOCAL_HTTPS_BOOTSTRAP=1 \
       LOCAL_HTTPS_NONINTERACTIVE="$NONINTERACTIVE" \
       LOCAL_HTTPS_AUTO_PIHOLE="${LOCAL_HTTPS_AUTO_PIHOLE:-}" \
+      LOCAL_HTTPS_DOMAIN="${LOCAL_HTTPS_DOMAIN:-}" \
       "$INSTALL_PATH" --install
   fi
 
@@ -125,6 +126,7 @@ run_installer_interactive() {
     LOCAL_HTTPS_BOOTSTRAP=1 \
     LOCAL_HTTPS_NONINTERACTIVE=1 \
     LOCAL_HTTPS_AUTO_PIHOLE="${LOCAL_HTTPS_AUTO_PIHOLE:-}" \
+    LOCAL_HTTPS_DOMAIN="${LOCAL_HTTPS_DOMAIN:-}" \
     "$INSTALL_PATH" --install
 }
 
